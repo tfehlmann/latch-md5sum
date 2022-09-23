@@ -1,0 +1,9 @@
+{
+    "include": ["wf"],
+    "reportPrivateImportUsage": "none",
+    "reportUnusedImport": "error",
+    "reportUnusedClass": "error",
+    "reportUnusedFunction": "error",
+    "reportPropertyTypeMismatch": "error",
+    "typeCheckingMode": "basic"
+}
