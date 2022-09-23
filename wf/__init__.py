@@ -4,9 +4,11 @@ Compute the md5 checksum of a file.
 
 import hashlib
 import logging
+import subprocess
+import tempfile
 from typing import cast
 
-from latch import small_task, workflow
+from latch import custom_task, workflow
 from latch.resources.launch_plan import LaunchPlan
 from latch.types import (
     LatchAuthor,
@@ -22,22 +24,35 @@ CHUNK_SIZE = 4096
 UPDATE_INTERVAL = int(500 * 1024 * 1024 / CHUNK_SIZE)  # all 500 MB
 
 
-@small_task
+@custom_task(cpu=1, memory=1)
 def compute_md5sum_task(file: LatchFile, output_file: LatchFile) -> LatchFile:
     """
     Compute the md5sum of a file.
     """
-    md5sum = hashlib.md5()
-    with open(file, "rb") as f:
-        for i, chunk in enumerate(iter(lambda: cast(bytes, f.read(CHUNK_SIZE)), b"")):
-            if i > 0 and i % UPDATE_INTERVAL == 0:
-                mb_read = i * CHUNK_SIZE / 1024 / 1024
-                logging.info("Read %.2f MB", mb_read)
-            md5sum.update(chunk)
-    result = md5sum.hexdigest()
-    with open("/tmp/md5sum.txt", "w", encoding="UTF-8") as f:
-        f.write(f"{result}\t{file.remote_path}\n")
-    return LatchFile("/tmp/md5sum.txt", remote_path=output_file.remote_path)  # type: ignore
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        file_pipe = os.path.join(tmp_dir, "fifo")
+        os.mkfifo(file_pipe)
+        if file.remote_path is not None:
+            file_source = file.remote_path
+            cp_cmd = ["latch", "cp"]
+        else:
+            file_source = file.local_path
+            cp_cmd = ["cp"]
+        with subprocess.Popen([*cp_cmd, file_source, file_pipe]) as cp_proc:
+            md5sum = hashlib.md5()
+            with open(file_pipe, "rb") as f:
+                for i, chunk in enumerate(iter(lambda: cast(bytes, f.read(CHUNK_SIZE)), b"")):
+                    if i > 0 and i % UPDATE_INTERVAL == 0:
+                        mb_read = i * CHUNK_SIZE / 1024 / 1024
+                        logging.info("Read %.2f MB", mb_read)
+                    md5sum.update(chunk)
+            result = md5sum.hexdigest()
+            with open("/tmp/md5sum.txt", "w", encoding="UTF-8") as f:
+                f.write(f"{result}\t{file.remote_path}\n")
+
+            if cp_proc.wait() != 0:
+                raise RuntimeError("latch cp failed")
+        return LatchFile("/tmp/md5sum.txt", remote_path=output_file.remote_path)  # type: ignore
 
 
 metadata = LatchMetadata(
