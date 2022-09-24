@@ -35,7 +35,7 @@ def download_file(remote_or_local_path: str, local_path: str, remote: bool) -> N
         subprocess.run(["cp", remote_or_local_path, local_path], check=True)
 
 
-@custom_task(cpu=1, memory=1)
+@custom_task(cpu=2, memory=1)
 def compute_md5sum_task(file: LatchFile, output_file: LatchFile) -> LatchFile:
     """
     Compute the md5sum of a file.
